@@ -13,7 +13,7 @@ class SceneSpec:
 
 
 class Agent:
-    """Mock LLM-backed agent that converts a long prompt into a scene plan."""
+    """Mock agent that converts a prompt into scene breakdowns."""
 
     async def plan_scenes(
         self,
@@ -24,7 +24,7 @@ class Agent:
         await asyncio.sleep(0.4)
 
         total_seconds = max(60, target_duration_minutes * 60)
-        scene_count = min(12, max(4, target_duration_minutes * 2))
+        scene_count = max(4, min(12, target_duration_minutes * 2))
         per_scene = total_seconds / scene_count
 
         scenes: List[SceneSpec] = []
@@ -33,11 +33,11 @@ class Agent:
                 SceneSpec(
                     text=(
                         f"Scene {index + 1}: {prompt}. "
-                        f"Continue the narrative with rising tension, cinematic action, and emotional resolution."
+                        f"Continue the story with cinematic progression, emotional payoff, and visual momentum."
                     ),
                     visual_prompt=(
-                        f"{style} video frame, highly detailed environment, character motion, smooth camera movement, "
-                        f"consistent color grading, dramatic lighting, story-driven composition, {prompt}"
+                        f"{style} visual composition, richly detailed environment, dramatic lighting, smooth camera motion, "
+                        f"consistent color grading, story-led framing, {prompt}"
                     ),
                     duration=round(per_scene, 2),
                 )
@@ -47,28 +47,28 @@ class Agent:
 
 
 class AutoregressiveVideoPipeline:
-    """Mock autoregressive generation loop that uses previous frame context for continuity."""
+    """Simulated continuation pipeline using previous context frames."""
 
     async def generate_scene(
         self,
         scene: SceneSpec,
         context_frames: Optional[Sequence[str]] = None,
     ) -> Dict[str, Any]:
-        await asyncio.sleep(0.8)
+        await asyncio.sleep(0.7)
 
-        base_frames = [
-            f"frame_{scene.visual_prompt[:12].replace(' ', '_')}_01.png",
-            f"frame_{scene.visual_prompt[:12].replace(' ', '_')}_02.png",
-            f"frame_{scene.visual_prompt[:12].replace(' ', '_')}_03.png",
+        prompt_tag = scene.visual_prompt[:12].replace(" ", "_")
+        generated_frames = [
+            f"frame_{prompt_tag}_01.png",
+            f"frame_{prompt_tag}_02.png",
+            f"frame_{prompt_tag}_03.png",
         ]
 
-        generated_frames = list(base_frames)
         return {
             "scene": scene,
             "context_frames": list(context_frames) if context_frames else ["initial_context_01.png"],
             "generated_frames": generated_frames,
-            "continuation_status": "smooth auto-regressive continuation",
-            "output_path": f"/tmp/{scene.text[:18].replace(' ', '_')}.mp4",
+            "continuation_status": "smooth continuation using previous context",
+            "output_path": f"/tmp/{prompt_tag}.mp4",
         }
 
     async def run(self, scenes: Sequence[SceneSpec]) -> List[Dict[str, Any]]:

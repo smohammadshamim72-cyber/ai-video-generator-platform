@@ -1,63 +1,90 @@
 # AI Video Generation Platform
 
-A full-stack AI video generation platform for creating long-form videos (1–24 minutes) using:
-- Agentic AI for planning scripts, scenes, and visual prompts
-- Autoregressive video continuation for smooth transition between scenes
-- FFmpeg/MoviePy for stitching, audio sync, and final rendering
-- Real-time WebSocket updates for frontend progress streaming
+A full-stack platform for generating long-form AI videos (1 to 24 minutes) by combining:
+- Agentic AI story planning and scene decomposition
+- Autoregressive video continuation for smooth transitions across scenes
+- Video stitching, audio synchronization, and TTS narration
+- Real-time progress streaming through WebSockets
+- Modern dashboard UI for prompt input, timeline monitoring, and preview
 
-## Architecture
+## Architecture Overview
 
-This repository is structured into three major layers:
+This project is designed as a multi-layer system:
 
-1. Frontend: Next.js + Tailwind dashboard for prompt entry, timeline updates, and final video preview
-2. Backend: FastAPI service for orchestration, API endpoints, and WebSocket progress streaming
-3. AI Workers: specialized pipeline for scene planning, video continuation, and media synthesis
+1. Frontend Layer
+   - Next.js App Router
+   - Tailwind CSS
+   - Dashboard UI for prompt input and generation monitoring
+   - Video preview player
 
-## Repository structure
+2. Backend Layer
+   - FastAPI REST API
+   - Async orchestration for generation tasks
+   - WebSocket streaming to frontend
+   - Scene generation and job management
+
+3. AI Worker Layer
+   - Agentic script planner
+   - Autoregressive video continuation pipeline
+   - Stitching + speech + music synchronization
+
+## Project Structure
 
 ```text
 ai-video-generator-platform/
 ├── README.md
 ├── .gitignore
 ├── backend/
+│   ├── .env.example
 │   ├── requirements.txt
 │   └── app/
 │       ├── __init__.py
+│       ├── config.py
 │       ├── main.py
 │       └── pipeline.py
 ├── frontend/
-│   ├── package.json
-│   ├── tsconfig.json
+│   ├── .env.example
 │   ├── next.config.mjs
+│   ├── package.json
 │   ├── postcss.config.js
 │   ├── tailwind.config.ts
-│   ├── .env.example
+│   ├── tsconfig.json
 │   ├── app/
 │   │   ├── globals.css
 │   │   ├── layout.tsx
 │   │   └── page.tsx
 │   └── components/
 │       └── video-generator-dashboard.tsx
-└── docs/
-    └── architecture.md
+├── docs/
+│   └── architecture.md
+└── LICENSE
 ```
 
 ## Core Components
 
-### Agentic AI Layer
-The backend agent accepts a long-form user prompt and decomposes it into a structured list of scenes. Each scene includes:
+### 1. Agentic Story Planner
+A backend agent receives a user input prompt and generates a sequence of scenes with:
 - narrative text
 - visual prompt
-- individual duration
+- per-scene duration
 
-### Autoregressive Continuation Pipeline
-The pipeline treats each scene as a sequential continuation of the previous one. It uses the last frames of the previous scene as context to simulate visual continuity and reduce drift.
+This simulates an LLM-driven narrative engine that expands a single long prompt into a storyboard.
 
-### Video Stitching & Audio Sync
-This final stage combines generated video chunks, applies TTS narration, syncs background music, and renders the final MP4.
+### 2. Autoregressive Video Continuation
+Each scene is generated using the previous scene's context frames, creating continuity between segments and reducing visual drift, cut mismatch, and color discontinuity.
 
-## Local setup
+### 3. Video Stitching and Audio Sync
+The generated scene chunks are combined, TTS narration is added, background music is mixed in, and FFmpeg/MoviePy renders the final MP4.
+
+### 4. Real-Time Progress Streaming
+The backend pushes updates such as:
+- Scripting...
+- Storyboarding complete...
+- Scene 1/10 Generating...
+- Stitching audio...
+- Final rendering complete.
+
+## Local Setup
 
 ### Backend
 
@@ -77,21 +104,25 @@ npm install
 npm run dev
 ```
 
-Then open:
+Open the app at:
 - Frontend: http://localhost:3000
 - API Docs: http://localhost:8000/docs
 
-## Example request
+## Example API Request
 
 ```bash
 curl -X POST http://localhost:8000/api/generate-video \
   -H "Content-Type: application/json" \
   -d '{
-    "prompt": "A cinematic documentary about a futuristic city where robots and humans coexist under a glowing sky.",
+    "prompt": "A cinematic futuristic city with flying cars, neon rain, and a lone astronaut discovering a hidden archive in the sky.",
     "target_duration_minutes": 4
   }'
 ```
 
-## Notes
+## Production Notes
 
-This repository is designed as a production-ready scaffold with realistic architecture. The mock LLM and diffusion pipeline are intentionally clean and modular so they can later be replaced with LangChain, AutoGen, Diffusers, FFmpeg, TTS, and cloud storage services.
+This repo is intentionally structured as a clean, modular starter for a production-grade AI video generation platform. The mock agent and continuation pipeline are built so they can later be replaced with LangChain, AutoGen, Diffusers, FFmpeg, TTS, and cloud storage integrations.
+
+## License
+
+MIT License

@@ -1,14 +1,12 @@
-from __future__ import annotations
-
-from typing import Any, Dict, List, Optional
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
+import asyncio
 
-from app.pipeline import Agent, AutoregressiveVideoPipeline
+from app.pipeline import Agent, AutoregressiveVideoPipeline, SceneSpec
 
-app = FastAPI(title="AI Video Generator API", version="1.0.0")
+app = FastAPI(title="AI Video Generator API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,24 +18,15 @@ app.add_middleware(
 
 
 class SceneSchema(BaseModel):
-    text: str = Field(..., description="Narrative text for the scene")
-    visual_prompt: str = Field(..., description="Visual generation prompt")
-    duration: float = Field(..., gt=0, description="Duration in seconds")
+    text: str
+    visual_prompt: str
+    duration: float = Field(..., gt=0)
 
 
 class GenerateVideoRequest(BaseModel):
-    prompt: str = Field(..., min_length=10, description="Long-form user prompt")
-    target_duration_minutes: int = Field(..., ge=1, le=24, description="Target duration in minutes")
-    style: Optional[str] = Field(default="cinematic", description="Visual style")
-
-
-class GenerateVideoResponse(BaseModel):
-    job_id: str
-    prompt: str
-    target_duration_minutes: int
-    scenes: List[SceneSchema]
-    status: str
-    output_url: Optional[str] = None
+    prompt: str = Field(..., min_length=10)
+    target_duration_minutes: int = Field(..., ge=1, le=24)
+    style: Optional[str] = "cinematic"
 
 
 class ConnectionManager:
@@ -52,15 +41,8 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def send_json(self, websocket: WebSocket, payload: Dict[str, Any]) -> None:
-        await websocket.send_json(payload)
-
-    async def broadcast(self, payload: Dict[str, Any]) -> None:
-        for connection in list(self.active_connections):
-            try:
-                await connection.send_json(payload)
-            except Exception:
-                self.disconnect(connection)
+    async def send_progress(self, websocket: WebSocket, message: str) -> None:
+        await websocket.send_json({"type": "progress", "message": message})
 
 
 manager = ConnectionManager()
@@ -73,22 +55,23 @@ async def health() -> Dict[str, str]:
     return {"status": "ok", "service": "ai-video-generator"}
 
 
-@app.post("/api/generate-video", response_model=GenerateVideoResponse)
-async def generate_video(payload: GenerateVideoRequest) -> GenerateVideoResponse:
+@app.post("/api/generate-video")
+async def generate_video(payload: GenerateVideoRequest) -> Dict[str, Any]:
     scenes = await agent.plan_scenes(payload.prompt, payload.target_duration_minutes, payload.style or "cinematic")
     generated = await pipeline.run(scenes)
 
-    return GenerateVideoResponse(
-        job_id=f"job_{payload.target_duration_minutes}m_{len(scenes)}s",
-        prompt=payload.prompt,
-        target_duration_minutes=payload.target_duration_minutes,
-        scenes=[
-            SceneSchema(text=scene.text, visual_prompt=scene.visual_prompt, duration=scene.duration)
+    return {
+        "job_id": f"video_{payload.target_duration_minutes}m_{len(scenes)}scenes",
+        "prompt": payload.prompt,
+        "target_duration_minutes": payload.target_duration_minutes,
+        "scene_count": len(scenes),
+        "scenes": [
+            {"text": scene.text, "visual_prompt": scene.visual_prompt, "duration": scene.duration}
             for scene in scenes
         ],
-        status="rendering_complete" if generated else "queued",
-        output_url="/tmp/final_video.mp4" if generated else None,
-    )
+        "status": "ready_for_stitching",
+        "output_url": "/tmp/final_video.mp4" if generated else None,
+    }
 
 
 @app.websocket("/ws/generate")
@@ -102,40 +85,25 @@ async def websocket_generate(websocket: WebSocket) -> None:
             target_duration_minutes = int(data.get("target_duration_minutes", 2))
 
             if not prompt:
-                await manager.send_json(websocket, {"type": "error", "message": "Prompt is required."})
+                await manager.send_progress(websocket, "Prompt is required")
                 continue
 
-            await manager.send_json(websocket, {"type": "progress", "message": "Scripting..."})
+            await manager.send_progress(websocket, "Scripting...")
             scenes = await agent.plan_scenes(prompt, target_duration_minutes, "cinematic")
 
-            await manager.send_json(
-                websocket,
-                {"type": "progress", "message": f"Storyboarding complete: {len(scenes)} scenes generated."},
-            )
+            await manager.send_progress(websocket, f"Storyboarding complete: {len(scenes)} scenes generated")
 
-            context_frames: Optional[List[str]] = None
+            previous_context_frames: Optional[List[str]] = None
             for index, scene in enumerate(scenes, start=1):
-                await manager.send_json(
-                    websocket,
-                    {"type": "progress", "message": f"Scene {index}/{len(scenes)} generating..."},
-                )
+                await manager.send_progress(websocket, f"Scene {index}/{len(scenes)} generating...")
+                result = await pipeline.generate_scene(scene, previous_context_frames)
+                previous_context_frames = result["generated_frames"]
+                await asyncio.sleep(0.2)
 
-                generated = await pipeline.generate_scene(scene, context_frames)
-                context_frames = generated["generated_frames"]
-
-                await manager.send_json(
-                    websocket,
-                    {
-                        "type": "scene",
-                        "scene_index": index,
-                        "message": f"Scene {index}/{len(scenes)} generated",
-                        "visual_prompt": scene.visual_prompt,
-                    },
-                )
-
-            await manager.send_json(websocket, {"type": "progress", "message": "Stitching audio..."})
-            await manager.send_json(websocket, {"type": "progress", "message": "Final rendering complete."})
-            await manager.send_json(websocket, {"type": "done", "output_url": "/tmp/final_video.mp4"})
+            await manager.send_progress(websocket, "Stitching audio...")
+            await asyncio.sleep(0.3)
+            await manager.send_progress(websocket, "Final rendering complete")
+            await websocket.send_json({"type": "done", "output_url": "/tmp/final_video.mp4"})
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
